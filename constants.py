@@ -1,11 +1,6 @@
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
-CHANNEL_ID = os.getenv('CHANNEL_ID')
+BOT_TOKEN = '8359814991:AAEbLO6QggVHL3Ki3muM9en90xZszm8K3bs'
+ADMIN_IDS = [137920080]
+CHANNEL_ID = '-1002995837993'
 
 # Название челленджа по умолчанию
 DEFAULT_CHALLENGE_NAME = "Челлендж 75 дней"
