@@ -1,7 +1,7 @@
 import aiosqlite
 import asyncio
 from datetime import datetime, date, timedelta
-from constants import USER_ACTIVE, USER_BLOCKED, USER_BANNED
+from constants import USER_ACTIVE, USER_BLOCKED
 
 class Database:
     def __init__(self, db_path='bot.db'):
@@ -18,8 +18,7 @@ class Database:
                     reminder_count INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     start_date DATE,
-                    current_day INTEGER DEFAULT 0,
-                    last_reminder_time TIMESTAMP  -- ДОБАВИТЬ ЭТУ СТРОЧКУ
+                    current_day INTEGER DEFAULT 0
                 )
             ''')
             
@@ -70,7 +69,8 @@ class Database:
             user = await self.get_user(telegram_id)
             if user and user[6]:  # start_date
                 start_date = datetime.strptime(user[6], '%Y-%m-%d').date()
-                current_day = (completion_date - start_date).days + 1
+                days_since_start = (completion_date - start_date).days
+                current_day = days_since_start + 1
                 
                 await db.execute(
                     'UPDATE users SET last_completion_date = ?, reminder_count = 0, current_day = ? WHERE telegram_id = ?',
@@ -85,8 +85,8 @@ class Database:
 
     async def reset_daily_completions(self):
         async with aiosqlite.connect(self.db_path) as db:
-            # Сбрасываем только last_completion_date, НЕ сбрасываем reminder_count
-            await db.execute('UPDATE users SET last_completion_date = NULL')
+            # Сбрасываем last_completion_date и reminder_count
+            await db.execute('UPDATE users SET last_completion_date = NULL, reminder_count = 0')
             await db.commit()
 
     async def get_all_active_users(self):
@@ -161,14 +161,16 @@ class Database:
             # Деактивируем предыдущие челленджи
             await db.execute('UPDATE challenge_progress SET is_active = FALSE')
             
-            # Создаем новый челлендж
+            # Создаем новый челлендж (начинается со следующего дня)
+            start_date = date.today() + timedelta(days=1)
+            
             await db.execute(
                 'INSERT INTO challenge_progress (challenge_name, challenge_task, total_days, start_date, current_day, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-                (name, task, days, date.today(), 1, True)
+                (name, task, days, start_date, 1, True)
             )
             
             # Сбрасываем прогресс всех пользователей
-            await db.execute('UPDATE users SET start_date = ?, current_day = 1, reminder_count = 0', (date.today(),))
+            await db.execute('UPDATE users SET start_date = ?, current_day = 1, reminder_count = 0', (start_date,))
             
             await db.commit()
 
@@ -188,8 +190,27 @@ class Database:
 
     async def get_user_current_day(self, telegram_id: int):
         user = await self.get_user(telegram_id)
-        if user and user[7]:  # current_day
-            return user[7]
+        challenge = await self.get_current_challenge()
+        
+        if user and user[6] and challenge:  # start_date
+            start_date = datetime.strptime(user[6], '%Y-%m-%d').date()
+            today = date.today()
+            
+            # Если челлендж еще не начался
+            if today < start_date:
+                return 0
+                
+            # Вычисляем текущий день
+            days_since_start = (today - start_date).days
+            current_day = days_since_start + 1
+            
+            # Не превышаем общее количество дней
+            total_days = challenge[2]
+            if current_day > total_days:
+                return total_days
+                
+            return current_day
+            
         return 1
 
     async def get_challenge_info(self):
@@ -211,37 +232,4 @@ class Database:
                 'UPDATE challenge_progress SET challenge_task = ? WHERE is_active = TRUE',
                 (task,)
             )
-            await db.commit()
-    
-    async def update_last_reminder_time(self, telegram_id: int, reminder_time: datetime):
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                'UPDATE users SET last_reminder_time = ? WHERE telegram_id = ?',
-                (reminder_time, telegram_id)
-            )
-            await db.commit()
-
-    async def get_last_reminder_time(self, telegram_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                'SELECT last_reminder_time FROM users WHERE telegram_id = ?', 
-                (telegram_id,)
-            ) as cursor:
-                result = await cursor.fetchone()
-                if result and result[0]:
-                    return datetime.fromisoformat(result[0])
-                return None
-
-    async def increment_reminder_count(self, telegram_id: int, reminder_time: datetime = None):
-        async with aiosqlite.connect(self.db_path) as db:
-            if reminder_time:
-                await db.execute(
-                    'UPDATE users SET reminder_count = reminder_count + 1, last_reminder_time = ? WHERE telegram_id = ?',
-                    (reminder_time, telegram_id)
-                )
-            else:
-                await db.execute(
-                    'UPDATE users SET reminder_count = reminder_count + 1 WHERE telegram_id = ?',
-                    (telegram_id,)
-                )
             await db.commit()

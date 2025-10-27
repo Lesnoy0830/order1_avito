@@ -5,9 +5,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from database import Database
-from constants import USER_ACTIVE, USER_BLOCKED, USER_BANNED, ADMIN_IDS, CHANNEL_ID, REMINDER_INTERVAL_HOURS
+from constants import USER_ACTIVE, USER_BLOCKED, ADMIN_IDS, CHANNEL_ID
 from keyboards import get_start_keyboard, get_admin_keyboard, get_back_keyboard, get_management_keyboard, get_cancel_keyboard, get_challenge_keyboard
-from datetime import date
+from datetime import date, timedelta
 import logging
 
 router = Router()
@@ -17,8 +17,6 @@ class AdminStates(StatesGroup):
     waiting_for_challenge_name = State()
     waiting_for_challenge_task = State()
     waiting_for_challenge_days = State()
-    waiting_for_ban_user_id = State()
-    waiting_for_unban_user_id = State()
     waiting_for_block_user_id = State()
     waiting_for_activate_user_id = State()
     waiting_for_update_task = State()
@@ -30,14 +28,23 @@ async def cmd_start(message: Message):
     
     if user:
         challenge_info = await db.get_challenge_info()
+        user_day = await db.get_user_current_day(message.from_user.id)
+        
         if challenge_info:
-            user_day = await db.get_user_current_day(message.from_user.id)
-            challenge_text = (
-                f"🏆 Активный челлендж: {challenge_info['name']}\n"
-                f"📅 День: {user_day}/{challenge_info['total_days']}\n"
-                f"💪 Задание: {user_day} {challenge_info['task']}\n\n"
-                f"Отправляй кружочек (видео-сообщение), чтобы отметить выполнение задания!"
-            )
+            if user_day == 0:
+                challenge_text = (
+                    f"🏆 Предстоящий челлендж: {challenge_info['name']}\n"
+                    f"📅 Начало: {challenge_info['start_date']}\n"
+                    f"💪 Всего дней: {challenge_info['total_days']}\n\n"
+                    f"Челлендж еще не начался! Первый день: {challenge_info['start_date']}"
+                )
+            else:
+                challenge_text = (
+                    f"🏆 Активный челлендж: {challenge_info['name']}\n"
+                    f"📅 День: {user_day}/{challenge_info['total_days']}\n"
+                    f"💪 Задание: {user_day} {challenge_info['task']}\n\n"
+                    f"Отправляй кружочек (видео-сообщение), чтобы отметить выполнение задания!"
+                )
         else:
             challenge_text = "В настоящее время нет активного челленджа."
         
@@ -58,14 +65,22 @@ async def agree_participation(message: Message):
     
     if challenge_info:
         user_day = await db.get_user_current_day(message.from_user.id)
-        challenge_text = (
-            f"🎉 Отлично! Ты записан в челлендж: {challenge_info['name']}\n\n"
-            f"📅 Твой текущий день: {user_day}/{challenge_info['total_days']}\n"
-            f"💪 Сегодня нужно сделать: {user_day} {challenge_info['task']}\n\n"
-            f"Каждый день отправляй кружочек (видео-сообщение), чтобы отметить выполнение задания. "
-            f"Напоминания будут приходить в 7:30 и 15:00 по МСК.\n"
-            f"После 2 напоминаний аккаунт будет заблокирован!"
-        )
+        if user_day == 0:
+            challenge_text = (
+                f"🎉 Отлично! Ты записан в челлендж: {challenge_info['name']}\n\n"
+                f"📅 Начало: {challenge_info['start_date']}\n"
+                f"💪 Всего дней: {challenge_info['total_days']}\n\n"
+                f"Челлендж еще не начался! Первый день: {challenge_info['start_date']}"
+            )
+        else:
+            challenge_text = (
+                f"🎉 Отлично! Ты записан в челлендж: {challenge_info['name']}\n\n"
+                f"📅 Твой текущий день: {user_day}/{challenge_info['total_days']}\n"
+                f"💪 Сегодня нужно сделать: {user_day} {challenge_info['task']}\n\n"
+                f"Каждый день отправляй кружочек (видео-сообщение), чтобы отметить выполнение задания. "
+                f"Напоминания будут приходить в 8:00 и 18:00 по МСК.\n"
+                f"Счетчик напоминаний сбрасывается каждый день в 00:00!"
+            )
     else:
         challenge_text = "Ты записан, но в настоящее время нет активного челленджа."
     
@@ -91,11 +106,8 @@ async def handle_video_note(message: Message):
     
     user_status = user[2]  # status field
     
-    if user_status == USER_BANNED:
-        await message.answer("Вы забанены и не можете отправлять отчеты.")
-        return
-    elif user_status == USER_BLOCKED:
-        await message.answer("Вы заблокированы за пропуск задания. Обратитесь к администратору для разблокировки.")
+    if user_status == USER_BLOCKED:
+        await message.answer("Вы заблокированы. Обратитесь к администратору для разблокировки.")
         return
     
     today = date.today()
@@ -105,12 +117,16 @@ async def handle_video_note(message: Message):
         await message.answer("Вы уже выполнили задание на сегодня!")
         return
     
-    # Обновляем выполнение задания
-    await db.update_user_completion(message.from_user.id, today)
-    
-    # Получаем информацию о текущем дне
+    # Получаем текущий день пользователя
     user_day = await db.get_user_current_day(message.from_user.id)
     challenge_info = await db.get_challenge_info()
+    
+    if user_day == 0:
+        await message.answer("Челлендж еще не начался!")
+        return
+    
+    # Обновляем выполнение задания
+    await db.update_user_completion(message.from_user.id, today)
     
     # Отправляем в канал
     if challenge_info:
@@ -180,8 +196,9 @@ async def manage_challenge(message: Message):
             f"Текущий челлендж:\n"
             f"🏆 Название: {challenge_info['name']}\n"
             f"💪 Задание: {challenge_info['task']}\n"
-            f"📅 Дней: {challenge_info['current_day']}/{challenge_info['total_days']}\n"
-            f"📅 Начало: {challenge_info['start_date']}"
+            f"📅 Всего дней: {challenge_info['total_days']}\n"
+            f"📅 Начало: {challenge_info['start_date']}\n"
+            f"📅 Текущий день: {challenge_info['current_day']}"
         )
     else:
         challenge_text = "Активный челлендж не установлен"
@@ -230,6 +247,7 @@ async def process_challenge_days(message: Message, state: FSMContext):
             f"🏆 Название: {challenge_name}\n"
             f"💪 Задание: {challenge_task}\n"
             f"📅 Дней: {days}\n"
+            f"📅 Начало: {date.today() + timedelta(days=1)}\n"
             f"🔄 Все пользователи начинают с 1 дня",
             reply_markup=get_admin_keyboard()
         )
@@ -262,8 +280,6 @@ async def admin_management_callback(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split("_")[1]
     
     actions = {
-        "ban": ("бана", AdminStates.waiting_for_ban_user_id, USER_BANNED),
-        "unban": ("разбана", AdminStates.waiting_for_unban_user_id, USER_ACTIVE),
         "block": ("блокировки", AdminStates.waiting_for_block_user_id, USER_BLOCKED),
         "activate": ("активации", AdminStates.waiting_for_activate_user_id, USER_ACTIVE)
     }
@@ -277,8 +293,6 @@ async def admin_management_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # Обработчики для разных действий
-@router.message(AdminStates.waiting_for_ban_user_id)
-@router.message(AdminStates.waiting_for_unban_user_id)
 @router.message(AdminStates.waiting_for_block_user_id)
 @router.message(AdminStates.waiting_for_activate_user_id)
 async def process_user_management(message: Message, state: FSMContext):
@@ -294,11 +308,10 @@ async def process_user_management(message: Message, state: FSMContext):
             await state.clear()
             return
         
-        # Просто обновляем статус - сброс счетчика происходит в database.py при активации
+        # Обновляем статус
         await db.update_user_status(user_id, action_status)
         
         status_names = {
-            USER_BANNED: "забанен",
             USER_BLOCKED: "заблокирован", 
             USER_ACTIVE: "активирован (счетчик напоминаний сброшен)"
         }
@@ -329,8 +342,7 @@ async def list_users(message: Message):
     for user in users:
         status_emoji = {
             USER_ACTIVE: "✅",
-            USER_BLOCKED: "🚫", 
-            USER_BANNED: "🔒"
+            USER_BLOCKED: "🚫"
         }.get(user[2], "❓")
         
         users_list.append(f"{status_emoji} ID: {user[0]}, Username: @{user[1] or 'нет'}, Статус: {user[2]}, День: {user[4]}, Напоминаний: {user[3]}")
@@ -356,7 +368,6 @@ async def show_stats(message: Message):
     
     active_users = [u for u in users if u[2] == USER_ACTIVE]
     blocked_users = [u for u in users if u[2] == USER_BLOCKED]
-    banned_users = [u for u in users if u[2] == USER_BANNED]
     
     users_with_reminders = [u for u in users if u[3] > 0]  # users with reminder_count > 0
     
@@ -365,7 +376,6 @@ async def show_stats(message: Message):
         f"👥 Всего пользователей: {len(users)}\n"
         f"✅ Активных: {len(active_users)}\n"
         f"🚫 Заблокированных: {len(blocked_users)}\n"
-        f"🔒 Забаненных: {len(banned_users)}\n"
         f"📅 Выполнили сегодня: {len(active_users) - len(completed_today)}\n"
         f"⏰ Не выполнили сегодня: {len(completed_today)}\n"
         f"🔔 Пользователей с напоминаниями: {len(users_with_reminders)}"
@@ -374,7 +384,8 @@ async def show_stats(message: Message):
     if challenge_info:
         stats_text += f"\n\n🏆 Текущий челлендж: {challenge_info['name']}\n"
         stats_text += f"💪 Задание: {challenge_info['task']}\n"
-        stats_text += f"📅 День: {challenge_info['current_day']}/{challenge_info['total_days']}\n"
-        stats_text += f"📅 Начало: {challenge_info['start_date']}"
+        stats_text += f"📅 Всего дней: {challenge_info['total_days']}\n"
+        stats_text += f"📅 Начало: {challenge_info['start_date']}\n"
+        stats_text += f"📅 Текущий день: {challenge_info['current_day']}"
     
     await message.answer(stats_text)

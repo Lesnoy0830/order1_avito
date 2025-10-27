@@ -33,8 +33,6 @@ def get_back_keyboard():
 def get_management_keyboard():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔒 Забанить", callback_data="admin_ban")],
-            [InlineKeyboardButton(text="🔓 Разбанить", callback_data="admin_unban")],
             [InlineKeyboardButton(text="🚫 Заблокировать", callback_data="admin_block")],
             [InlineKeyboardButton(text="✅ Активировать", callback_data="admin_activate")]
         ]
