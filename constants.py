@@ -11,7 +11,7 @@ UPDATE_HOUR = 0
 UPDATE_MINUTE = 0
 
 # Время напоминаний (8:00 и 18:00 по МСК)
-REMINDER_TIMES = [(8, 0), (18, 0)]
+REMINDER_TIMES = [(7, 0),(15, 0), (19, 0)]
 
 # Состояния пользователя
 USER_ACTIVE = "active"
