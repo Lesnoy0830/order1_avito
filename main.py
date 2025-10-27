@@ -80,7 +80,7 @@ async def main():
     # Ежедневный сброс в 00:00
     scheduler.add_job(reset_daily_tasks, 'cron', hour=UPDATE_HOUR, minute=UPDATE_MINUTE)
     
-    # Напоминания в 8:00 и 18:00
+    # Напоминания в 7:00 и 15:00 и 19:00
     for reminder_time in REMINDER_TIMES:
         hour, minute = reminder_time
         scheduler.add_job(send_reminders, 'cron', hour=hour, minute=minute)
