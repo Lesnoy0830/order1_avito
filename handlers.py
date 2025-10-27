@@ -21,9 +21,16 @@ class AdminStates(StatesGroup):
     waiting_for_activate_user_id = State()
     waiting_for_update_task = State()
 
+# Простой тестовый хендлер для проверки
+@router.message(Command("test"))
+async def cmd_test(message: Message):
+    await message.answer("✅ Бот работает! Тестовое сообщение получено.")
+
 # Основные хендлеры
 @router.message(Command("start"))
 async def cmd_start(message: Message):
+    logging.info(f"Start command received from user {message.from_user.id}")
+    
     user = await db.get_user(message.from_user.id)
     
     if user:
@@ -54,7 +61,7 @@ async def cmd_start(message: Message):
         )
     else:
         await message.answer(
-            "Привет! Сейчас идет активное испытание. Записывать тебя в участники?",
+            "Привет! Записывать тебя в участники?",
             reply_markup=get_start_keyboard()
         )
 
@@ -110,19 +117,19 @@ async def handle_video_note(message: Message):
         await message.answer("Вы заблокированы. Обратитесь к администратору для разблокировки.")
         return
     
-    today = date.today()
-    last_completion = user[3]  # last_completion_date field
-    
-    if last_completion and last_completion == today.isoformat():
-        await message.answer("Вы уже выполнили задание на сегодня!")
-        return
-    
     # Получаем текущий день пользователя
     user_day = await db.get_user_current_day(message.from_user.id)
     challenge_info = await db.get_challenge_info()
     
     if user_day == 0:
         await message.answer("Челлендж еще не начался!")
+        return
+    
+    today = date.today()
+    last_completion = user[3]  # last_completion_date field
+    
+    if last_completion and last_completion == today.isoformat():
+        await message.answer("Вы уже выполнили задание на сегодня!")
         return
     
     # Обновляем выполнение задания
