@@ -108,12 +108,21 @@ class Database:
         today = date.today()
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                '''SELECT telegram_id, username, reminder_count, current_day FROM users 
+                '''SELECT telegram_id, username, reminder_count FROM users 
                 WHERE (last_completion_date != ? OR last_completion_date IS NULL) 
                 AND status = ?''',
                 (today, USER_ACTIVE)
             ) as cursor:
-                return await cursor.fetchall()
+                users = await cursor.fetchall()
+                
+                # Добавляем актуальный текущий день для каждого пользователя
+                result = []
+                for user in users:
+                    telegram_id, username, reminder_count = user
+                    current_day = await self.get_user_current_day(telegram_id)
+                    result.append((telegram_id, username, reminder_count, current_day))
+                
+                return result
 
     async def update_user_status(self, telegram_id: int, status: str):
         async with aiosqlite.connect(self.db_path) as db:
