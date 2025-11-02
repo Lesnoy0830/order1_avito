@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -21,10 +21,22 @@ class AdminStates(StatesGroup):
     waiting_for_activate_user_id = State()
     waiting_for_update_task = State()
 
-# Простой тестовый хендлер для проверки
+# Функция проверки подписки на канал
+async def check_channel_subscription(bot, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(CHANNEL_ID, user_id)
+        return member.status in ['member', 'administrator', 'creator']
+    except Exception as e:
+        logging.error(f"Error checking channel subscription for {user_id}: {e}")
+        return False
+
+# Простой тестовый хендлер для проверки (только для админов)
 @router.message(Command("test"))
 async def cmd_test(message: Message):
-    await message.answer("✅ Бот работает! Тестовое сообщение получено.")
+    if message.from_user.id in ADMIN_IDS:
+        await message.answer("✅ Бот работает! Тестовое сообщение получено.")
+    else:
+        await message.answer("У вас нет доступа к этой команде.")
 
 # Основные хендлеры
 @router.message(Command("start"))
@@ -56,8 +68,7 @@ async def cmd_start(message: Message):
             challenge_text = "В настоящее время нет активного челленджа."
         
         await message.answer(
-            challenge_text,
-            reply_markup=get_back_keyboard() if message.from_user.id in ADMIN_IDS else None
+            challenge_text
         )
     else:
         await message.answer(
@@ -67,6 +78,18 @@ async def cmd_start(message: Message):
 
 @router.message(F.text == "✅ Да, записать меня!")
 async def agree_participation(message: Message):
+    # Проверяем подписку на канал
+    is_subscribed = await check_channel_subscription(message.bot, message.from_user.id)
+    
+    if not is_subscribed:
+        await message.answer(
+            "📢 Для участия в челлендже необходимо подписаться на наш канал!\n\n"
+            f"Подпишитесь на канал @do_push", #
+            reply_markup=get_start_keyboard() if message.from_user.id in ADMIN_IDS else None
+        )
+        return
+    
+    # Если подписан - продолжаем запись
     await db.add_user(message.from_user.id, message.from_user.username)
     challenge_info = await db.get_challenge_info()
     

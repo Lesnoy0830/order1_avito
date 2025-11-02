@@ -1,7 +1,6 @@
 import aiosqlite
-import asyncio
 from datetime import datetime, date, timedelta
-from constants import USER_ACTIVE, USER_BLOCKED
+from constants import USER_ACTIVE
 
 class Database:
     def __init__(self, db_path='bot.db'):

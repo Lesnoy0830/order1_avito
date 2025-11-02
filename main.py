@@ -3,12 +3,11 @@ import logging
 from aiogram import Bot, Dispatcher 
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, time
 import pytz
 
 from handlers import router
 from database import Database
-from constants import BOT_TOKEN, USER_BLOCKED, UPDATE_HOUR, UPDATE_MINUTE, REMINDER_TIMES
+from constants import BOT_TOKEN, ADMIN_IDS, UPDATE_HOUR, UPDATE_MINUTE, REMINDER_TIMES
 from keyboards import get_back_keyboard
 
 # Настройка логирования
